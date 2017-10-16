@@ -1,0 +1,149 @@
+---
+author: "Khalil ElKhiari"
+date: "8 mai 2016"
+output: html_document
+---
+
+#The analysis of the severe weather events impact in USA (1995-2011)
+
+##Synopsis
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+We've narrowed our data down to fewer variables. After performing the necessary transformations, we aggregate the reduced data set by event type, in order to figure out the top 10 of events which are most harmful to population health, and those with the greatest economic consequences.
+
+##Data processing
+
+For the sake of reproducibility, we use R to download the data file and then read it, the output will be stored in a variable called "storm.data"
+
+```{r, echo=TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","D:/RWSPACE/project52/stormdata.bz2")
+storm.data <- read.csv("D:/RWSPACE/project52/stormdata.bz2")
+```
+
+Having a look into our data (dimension, variables, classes, ...)
+
+```{r, echo=TRUE}
+dim(storm.data)
+head(storm.data)
+str(storm.data)
+```
+
+Our analysis will be focused in human fatalities/injuries and enconomic damages. Hence, we will narrow our variables down to relevant ones. The new data set is called "storm"
+
+```{r, echo=TRUE}
+library(dplyr)
+storm <- select(storm.data,EVTYPE,FATALITIES,INJURIES,PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP)
+head(storm)
+```
+
+The fatalities and injuries are represented by numerical data classes, and need no more processing before the reporting stage. Whereas we have to consider the exponent factor for both property and crop damage.
+
+```{r, echo=TRUE}
+unique(storm$PROPDMGEXP)
+unique(storm$CROPDMGEXP)
+```
+
+In order to have less exponent levels, we transform all of its values to Capital letters :
+
+```{r, echo=TRUE}
+storm$PROPDMGEXP <- toupper(storm$PROPDMGEXP)
+unique(storm$PROPDMGEXP)
+storm$CROPDMGEXP <- toupper(storm$CROPDMGEXP)
+unique(storm$CROPDMGEXP)
+```
+
+We notice that there the exponents are represented either by numbers or letters. We assume that the special characters (+,?,-), Zeros and blanks mean that no transformation is needed. 
+
+### Writing a function of transformation 
+
+```{r, echo=TRUE}
+exp.trans <- function(column){
+
+             column[column == "H"]<- 100
+             column[column == "K"]<- 1000
+             column[column == "M"]<- 1000000
+             column[column == "B"]<- 1000000000
+             column[column == "1"]<- 10
+             column[column == "2"]<- 100
+             column[column == "3"]<- 1000
+             column[column == "4"]<- 10000
+             column[column == "5"]<- 100000
+             column[column == "6"]<- 1000000
+             column[column == "7"]<- 10000000
+             column[column == "8"]<- 100000000
+             column[column == "0"]<- 1
+             column[column == "+"]<- 1
+             column[column == "-"]<- 1
+             column[column == "?"]<- 1
+             column[column == ""] <- 1
+      
+      return(column)
+}
+```
+
+We will use the function written above to transform exponent columns and calculate the value of property/crop damage and store it in new columns called "PROPDMGVAL" and "CROPDMGVAL"
+
+```{r, echo=TRUE}
+#Property damage
+storm$PROPDMGEXP <- exp.trans(storm$PROPDMGEXP)
+mode(storm$PROPDMGEXP) <- "numeric"
+storm <- mutate(storm,PROPDMGVAL = PROPDMGEXP * PROPDMG)
+#Crop damage
+storm$CROPDMGEXP <- exp.trans(storm$CROPDMGEXP)
+mode(storm$CROPDMGEXP) <- "numeric"
+storm <- mutate(storm,CROPDMGVAL = CROPDMGEXP * CROPDMG)
+```
+
+In order to have the economic consequences of weather events, we sum the property and crop damages
+
+```{r, echo=TRUE}
+storm <- mutate(storm,ECODMG = CROPDMGVAL + PROPDMGVAL)
+```
+
+Now and as a last step of reporting stage preparations, we will aggregate our data by event type, for each item (Fatalities/Injuries and Property/Crop damage)
+
+```{r, echo=TRUE}
+fatal.sum <- aggregate(FATALITIES ~ EVTYPE,storm,sum)
+injury.sum <- aggregate(INJURIES ~ EVTYPE,storm,sum)
+ecodmg.sum <- aggregate(ECODMG ~ EVTYPE,storm,sum)
+```
+
+As we are interested in severe weather events, we will sort our data to filter the top 10 for each category (Fatalities/Injuries and Economic impacts)
+
+```{r, echo=TRUE}
+top.fatal <- fatal.sum[order(-fatal.sum$FATALITIES),][1:10,]
+top.injury <- injury.sum[order(-injury.sum$INJURIES),][1:10,]
+top.ecodmg <- ecodmg.sum[order(-ecodmg.sum$ECODMG),][1:10,]
+```
+
+##Results
+
+### Most harmful events to population health
+
+The analysis aim to address the question of severe harmful weather events to population health. 
+We choose to report separately the events leading to deaths and to injuries.
+
+```{r, echo=TRUE}
+library(ggplot2)
+ggplot(data = top.fatal, aes(x=reorder(top.fatal$EVTYPE,-top.fatal$FATALITIES), y=top.fatal$FATALITIES)) + geom_bar(fill="red", stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ylab("Number of deaths") + xlab("Events") + ggtitle("Total Number of deaths in USA due to severe weather events 1995-2011")
+```
+
+
+```{r, echo=TRUE}
+ggplot(data = top.injury, aes(x=reorder(top.injury$EVTYPE,-top.injury$INJURIES), y=top.injury$INJURIES)) + geom_bar(fill="orange", stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ylab("Number of injuries") + xlab("Weather events") + ggtitle("Total Number of injuries in USA due to severe weather events 1995-2011")
+```
+
+### Events types having the greatest economic damages
+
+```{r, echo=TRUE}
+ggplot(data = top.ecodmg, aes(x=reorder(top.ecodmg$EVTYPE,-top.ecodmg$ECODMG), y=top.ecodmg$ECODMG/(10^9))) + geom_bar(fill="black", stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ylab("Damages cost ($ billions)") + xlab("Weather events") + ggtitle("Total damages cost of weather events 1995-2011")
+```
+
+##Conclusion
+
+We can conclude that the Tornado was responsible for most of the deaths and injuries in USA, caused by severe weather events between 1995 and 2011 (5633 deaths and 91346 injuries).
+Excessive heat and Thunderstorm wind came in the 2nd position as the most events causing fatalities and injuries respectively.
+
+Economically speaking, the floods have the greatest impact, causing over than $150 billion in damages. 
+Tornado is ranking third and hence could be considered the most dangerous weather event experienced by USA between 1995 and 2011

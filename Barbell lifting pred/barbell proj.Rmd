@@ -1,0 +1,155 @@
+---
+title: "Barbell lifting project"
+author: "Khalil ElKhiari"
+date: "3 novembre 2016"
+output: html_document
+---
+
+#Summary
+
+Below, you cand find the background as described in the Coursera project :
+
+"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)"
+
+# Getting and cleaning data
+
+##Data
+
+-The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+-The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##Setting up workspace
+
+```{r, echo=TRUE}
+setwd("D:/RWSPACE/pml-proj")
+library(caret); library(rattle); library(rpart); library(rpart.plot)
+library(randomForest); library(repmis)
+```
+
+##Download and import data
+
+```{r, echo=TRUE}
+url_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+dest_training <- "pml-training.csv"
+#download.file(url=url_training, destfile=dest_training, method="curl")
+url_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+dest_testing <- "pml-testing.csv"
+#download.file(url=url_testing, destfile=dest_testing, method="curl")
+```
+
+##Loading data to our workspace
+
+```{r, echo=TRUE}
+training <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+testing <- read.csv("pml-testing.csv", na.strings = c("NA", ""))
+dim(training);dim(testing)
+```
+
+##Cleaning the data
+
+1-Removing columns unuseful for prediction
+2-Removing predictors with more than 70% of "NA" observations 
+
+###Removing columns unuseful for prediction
+
+```{r, echo=TRUE}
+#Create a copy of our original data sets
+traindata <- training
+testdata <- testing
+#Remove the seven first variables as they're irrelevant for prediction
+traindata <- traindata[,8:dim(traindata)[2]]
+testdata <- testdata[,8:dim(testdata)[2]]
+```
+
+###Removing predictors with more than 70% of "NA" observations
+
+```{r, echo=TRUE}
+#create a vector with the number of NAs in each predictor
+sumNA <- c()
+for(i in 1:length(traindata)){
+   sumNA[i] <- sum(is.na(traindata[,i]))   
+}
+#create a vector of offsets of columns to be removed
+colNA <- c()
+cut <- 0.7*dim(traindata)[1]
+j <- 1
+for(i in 1:length(sumNA)){
+   if(sumNA[i] > cut){
+   colNA[j] <- i
+   j <- j+1
+   }
+}
+#Remove the columns with resulting offsets
+traindata <- traindata[,-colNA]
+#Applying the transformation to the test set as well
+testdata <- testdata[,-colNA]
+#Display the final dimensions of our data
+dim(testdata);dim(traindata)
+```
+
+The number of observations in the training data set is enough to be splitted into a new training dataset (70%), and a "validation datasset" (30%)
+
+##Partitioning the training data set
+
+```{r, echo=TRUE}
+inTrain <- createDataPartition(traindata$classe,p=0.6,list = FALSE)
+myTrain <- traindata[inTrain,]
+myValid <- traindata[-inTrain,]
+dim(myTrain);dim(myValid)
+```
+
+#Prediction algorithms
+
+We use the classification trees and random forests for prediction
+
+##Classification trees
+
+```{r, echo=TRUE}
+control <- trainControl(method = "cv", number = 5)
+rpart_mod <- train(classe ~ ., data = myTrain, method = "rpart", 
+                   trControl = control)
+print(rpart_mod, digits = 4)
+```
+
+```{r, echo=TRUE}
+fancyRpartPlot(rpart_mod$finalModel)
+```
+
+```{r, echo=TRUE}
+# prediction using validation dataset
+predict1 <- predict(rpart_mod, myValid)
+# Results
+ConfMatrix <- confusionMatrix(myValid$classe, predict1)
+ConfMatrix$overall[1]
+```
+
+The accuracy is 0.5419 which means that the classification trees don't predict well the outcome
+
+##Random Forests
+
+```{r, echo=TRUE}
+RF_mod <- train(classe ~ ., data = myTrain, method = "rf", 
+                   trControl = control)
+print(RF_mod, digits = 4)
+```
+
+```{r, echo=TRUE}
+# prediction using validation dataset
+predict2 <- predict(RF_mod, myValid)
+# Results
+ConfMatrix_RF <- confusionMatrix(myValid$classe, predict2)
+ConfMatrix_RF$overall[1]
+```
+
+Prediction is highly accurate using the random Forest method.
+
+#Prediction applied to testing set
+
+```{r, echo=TRUE}
+predict(RF_mod,testdata)
+```
+
